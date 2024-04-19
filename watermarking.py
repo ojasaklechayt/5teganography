@@ -361,7 +361,12 @@ class SpreadSpectrumSteganography:
 
 class Compare():
     def correlation(self, img1, img2):
-        return signal.correlate2d(img1, img2)
+        if len(img1.shape) > 2:
+            img1 = np.mean(img1, axis=2)
+        if len(img2.shape) > 2:
+            img2 = np.mean(img2, axis=2)
+        
+        return signal.correlate2d(img1, img2, mode='valid')
 
     def meanSquareError(self, img1, img2):
         error = np.sum((img1.astype('float') - img2.astype('float')) ** 2)
@@ -374,6 +379,10 @@ class Compare():
             return 100
         PIXEL_MAX = 255.0
         return 20 * math.log10(PIXEL_MAX / math.sqrt(mse))
+    
+    def embedding_capacity(self, img_size):
+        # Number of bits that can be embedded per pixel
+        return img_size * 3
 
 
 if __name__ == "__main__":
@@ -481,6 +490,7 @@ if __name__ == "__main__":
             os.chdir("..")
 
         elif m == "3":
+            # Comparison Section
             os.chdir("Original_image/")
             original_image_file = input("Enter the name of the original file with extension : ")
             lsb_img = Image.open(original_image_file)
@@ -497,6 +507,9 @@ if __name__ == "__main__":
             os.chdir("..")
             os.chdir("Comparison_result/")
 
+            # Resize decoded images to match encoded images
+            dct_img = cv2.resize(dct_img, (dct_img_encoded.shape[1], dct_img_encoded.shape[0]))
+
             # Comparison using different methods
             mse_lsb = Compare().meanSquareError(np.array(lsb_img), np.array(lsb_img_encoded))
             mse_dct = Compare().meanSquareError(dct_img, dct_img_encoded)
@@ -510,32 +523,62 @@ if __name__ == "__main__":
             psnr_spread_spectrum = Compare().psnr(np.array(spread_spectrum_img), np.array(spread_spectrum_img_encoded))
             psnr_rpe = Compare().psnr(np.array(lsb_img), np.array(rpe_img_encoded))
 
+            capacity_lsb = Compare().embedding_capacity(lsb_img.size[0] * lsb_img.size[1])
+            capacity_dct = Compare().embedding_capacity(dct_img.size)
+            capacity_dwt = Compare().embedding_capacity(dwt_img.size)
+            capacity_spread_spectrum = Compare().embedding_capacity(spread_spectrum_img.size[0] * spread_spectrum_img.size[1])
+            capacity_rpe = Compare().embedding_capacity(lsb_img.size[0] * lsb_img.size[1])
+
+            correlation_lsb = Compare().correlation(np.array(lsb_img), np.array(lsb_img_encoded))
+            correlation_dct = Compare().correlation(dct_img, dct_img_encoded)
+            correlation_dwt = Compare().correlation(dwt_img, dwt_img_encoded)
+            correlation_spread_spectrum = Compare().correlation(np.array(spread_spectrum_img), np.array(spread_spectrum_img_encoded))
+            correlation_rpe = Compare().correlation(np.array(lsb_img), np.array(rpe_img_encoded))
+
+            correlation_lsb_mean = np.mean(correlation_lsb)  # Calculate the mean of the correlation array
+            correlation_dct_mean = np.mean(correlation_dct)
+            correlation_dwt_mean = np.mean(correlation_dwt)
+            correlation_spread_spectrum_mean = np.mean(correlation_spread_spectrum)
+            correlation_rpe_mean = np.mean(correlation_rpe)
+
             workbook = xlwt.Workbook()
-            sheet = workbook.add_sheet('MSE_PSNR')
+            sheet = workbook.add_sheet('Comparison')
 
             sheet.write(0, 0, 'Method')
             sheet.write(0, 1, 'MSE')
             sheet.write(0, 2, 'PSNR')
+            sheet.write(0, 3, 'Correlation')
+            sheet.write(0, 4, 'Embedding Capacity (bits)')
 
             sheet.write(1, 0, 'LSB')
             sheet.write(1, 1, mse_lsb)
             sheet.write(1, 2, psnr_lsb)
+            sheet.write(1, 3, correlation_lsb_mean)
+            sheet.write(1, 4, capacity_lsb)
 
             sheet.write(2, 0, 'DCT')
             sheet.write(2, 1, mse_dct)
             sheet.write(2, 2, psnr_dct)
+            sheet.write(2, 3, correlation_dct_mean)
+            sheet.write(2, 4, capacity_dct)
 
             sheet.write(3, 0, 'DWT')
             sheet.write(3, 1, mse_dwt)
             sheet.write(3, 2, psnr_dwt)
+            sheet.write(3, 3, correlation_dwt_mean)
+            sheet.write(3, 4, capacity_dwt)
 
             sheet.write(4, 0, 'Spread Spectrum')
             sheet.write(4, 1, mse_spread_spectrum)
             sheet.write(4, 2, psnr_spread_spectrum)
-            
+            sheet.write(4, 3, correlation_spread_spectrum_mean)
+            sheet.write(4, 4, capacity_spread_spectrum)
+
             sheet.write(5, 0, 'RPE')
             sheet.write(5, 1, mse_rpe)
             sheet.write(5, 2, psnr_rpe)
+            sheet.write(5, 3, correlation_rpe_mean)
+            sheet.write(5, 4, capacity_rpe)
 
             workbook.save('Comparison_result.xls')
 
