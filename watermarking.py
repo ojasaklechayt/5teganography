@@ -14,6 +14,7 @@ import random
 import base64
 from skimage.metrics import structural_similarity as compare_ssim
 import xlsxwriter
+import matplotlib.patches as mpatches
 
 quant = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
                   [12, 12, 14, 19, 26, 58, 60, 55],
@@ -395,6 +396,56 @@ class Compare:
         # Number of bits that can be embedded per pixel
         return img_size * 3 * 8
 
+def generate_comparison_chart(data, output_filename):
+    methods = [str(method) if method is not None else 'Unknown' for method, *_ in data]
+    ssim_values = [float(ssim) if ssim is not None else 0.0 for _, ssim, *_ in data]
+    correlation_values = [float(correlation) if correlation is not None else 0.0 for _, _, correlation, *_ in data]
+    psnr_values = [float(psnr) if psnr is not None else 0.0 for _, _, _, psnr, *_ in data]
+    capacity_values = [float(capacity) if capacity is not None else 0.0 for _, _, _, _, capacity, *_ in data]
+    mse_values = [float(mse) if mse is not None else 0.0 for _, _, _, _, _, mse in data]
+
+    plt.figure(figsize=(12, 8))
+
+    # Plot SSIM
+    plt.subplot(2, 3, 1)
+    for method, ssim in zip(methods, ssim_values):
+        plt.bar(method, ssim, label=method)
+    plt.title('SSIM')
+    plt.xticks(rotation=45)
+
+    # Plot Correlation
+    plt.subplot(2, 3, 2)
+    for method, correlation in zip(methods, correlation_values):
+        plt.bar(method, correlation, label=method)
+    plt.title('Correlation')
+    plt.xticks(rotation=45)
+
+    # Plot PSNR
+    plt.subplot(2, 3, 3)
+    for method, psnr in zip(methods, psnr_values):
+        plt.bar(method, psnr, label=method)
+    plt.title('PSNR')
+    plt.xticks(rotation=45)
+
+    # Plot Capacity
+    plt.subplot(2, 3, 4)
+    for method, capacity in zip(methods, capacity_values):
+        plt.bar(method, capacity, label=method)
+    plt.title('Embedding Capacity')
+    plt.xticks(rotation=45)
+
+    # Plot MSE
+    plt.subplot(2, 3, 5)
+    for method, mse in zip(methods, mse_values):
+        plt.bar(method, mse, label=method)
+    plt.title('MSE')
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+
+    plt.savefig(output_filename)
+    plt.show()
 
 if __name__ == "__main__":
     if os.path.exists("Encoded_image/"):
@@ -581,6 +632,16 @@ if __name__ == "__main__":
                 for col, cell_data in enumerate(row_data):
                     worksheet.write(row, col, cell_data)
 
+            comparison_data = [
+                ["LSB", ssim_lsb, correlation_lsb, psnr_lsb, capacity_lsb, mse_lsb],
+                ["DCT", ssim_dct, correlation_dct, psnr_dct, capacity_dct, mse_dct],
+                ["DWT", ssim_dwt, correlation_dwt, psnr_dwt, capacity_dwt, mse_dwt],
+                ["Spread Spectrum", ssim_spread_spectrum, correlation_spread_spectrum, psnr_spread_spectrum, capacity_spread_spectrum, mse_spread_spectrum],
+                ["RPE", ssim_rpe, correlation_rpe, psnr_rpe, capacity_rpe, mse_rpe]
+            ]
+            
+            generate_comparison_chart(comparison_data, "comparison_chart.png")
+        
             # Close the workbook
             workbook.close()
 
