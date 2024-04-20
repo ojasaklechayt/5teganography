@@ -12,6 +12,8 @@ from pathlib import Path
 from scipy import signal
 import random
 import base64
+from skimage.metrics import structural_similarity as compare_ssim
+import xlsxwriter
 
 quant = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
                   [12, 12, 14, 19, 26, 58, 60, 55],
@@ -332,20 +334,19 @@ class SpreadSpectrumSteganography:
         return encrypted_image
 
     def decrypt(self, encrypted_image):
-        # Decode the spread spectrum encoded message from the image
         binary_msg = ''
         for row in range(encrypted_image.shape[0]):
             for col in range(encrypted_image.shape[1]):
-                pixel_val = np.all(encrypted_image[row, col][0])  # Accessing the first element of the pixel value
-                pseudo_random_val = np.any(self.pseudo_random_seq[row, col])  # Accessing the corresponding pseudo-random sequence value
-                binary_msg += '1' if (pixel_val ^ pseudo_random_val) else '0'
+                # Accessing the blue channel (assuming message encoded in blue)
+                pixel_val = encrypted_image[row, col, 2]  
+                pseudo_random_val = self.pseudo_random_seq[row, col]  # Corresponding pseudo-random sequence value
+                binary_msg += '1' if np.any(pixel_val ^ pseudo_random_val) else '0'  # Check if any element evaluates to True
 
-        # Pad the binary message to ensure it's a multiple of 8
+        # Padding and decoding binary message
         remainder = len(binary_msg) % 8
         if remainder != 0:
             binary_msg = binary_msg[:-(remainder)]  # Remove excess bits
 
-        # Decode the binary message to ASCII characters
         decoded_msg = ''
         for i in range(0, len(binary_msg), 8):
             decoded_msg += chr(int(binary_msg[i:i + 8], 2))
@@ -353,14 +354,21 @@ class SpreadSpectrumSteganography:
         return decoded_msg
 
     def generate_pseudo_random_sequence(self, img_shape):
-        # Generate a pseudo-random sequence based on the image shape
-        # You can use any suitable method to generate the sequence
-        # For simplicity, let's use a deterministic sequence for demonstration
-        np.random.seed(123)  # Seed for reproducibility
+        np.random.seed(123) 
         self.pseudo_random_seq = np.random.randint(0, 2, size=img_shape)
 
-class Compare():
-    def correlation(self, img1, img2):
+class Compare:
+    @staticmethod
+    def ssim(img1, img2):
+        if len(img1.shape) > 2:
+            img1 = np.mean(img1, axis=2)
+        if len(img2.shape) > 2:
+            img2 = np.mean(img2, axis=2)
+        
+        return compare_ssim(img1, img2, data_range=img1.max() - img1.min())
+    
+    @staticmethod
+    def correlation(img1, img2):
         if len(img1.shape) > 2:
             img1 = np.mean(img1, axis=2)
         if len(img2.shape) > 2:
@@ -368,21 +376,24 @@ class Compare():
         
         return signal.correlate2d(img1, img2, mode='valid')
 
-    def meanSquareError(self, img1, img2):
+    @staticmethod
+    def meanSquareError(img1, img2):
         error = np.sum((img1.astype('float') - img2.astype('float')) ** 2)
         error /= float(img1.shape[0] * img1.shape[1])
         return error
 
-    def psnr(self, img1, img2):
-        mse = self.meanSquareError(img1, img2)
+    @staticmethod
+    def psnr(img1, img2):
+        mse = Compare.meanSquareError(img1, img2)
         if mse == 0:
             return 100
         PIXEL_MAX = 255.0
         return 20 * math.log10(PIXEL_MAX / math.sqrt(mse))
     
-    def embedding_capacity(self, img_size):
+    @staticmethod
+    def embedding_capacity(img_size):
         # Number of bits that can be embedded per pixel
-        return img_size * 3
+        return img_size * 3 * 8
 
 
 if __name__ == "__main__":
@@ -492,98 +503,91 @@ if __name__ == "__main__":
         elif m == "3":
             # Comparison Section
             os.chdir("Original_image/")
-            original_image_file = input("Enter the name of the original file with extension : ")
+            original_img = Image.open(original_image_file)
             lsb_img = Image.open(original_image_file)
             dct_img = cv2.imread(original_image_file, cv2.IMREAD_UNCHANGED)
             dwt_img = cv2.imread(original_image_file, cv2.IMREAD_UNCHANGED)
             spread_spectrum_img = Image.open(original_image_file)
+            rpe_img = Image.open(original_image_file)
             os.chdir("..")
             os.chdir("Encoded_image/")
-            lsb_img_encoded = Image.open(lsb_encoded_image_file)
-            dct_img_encoded = cv2.imread(dct_encoded_image_file, cv2.IMREAD_UNCHANGED)
-            dwt_img_encoded = cv2.imread(dwt_encoded_image_file, cv2.IMREAD_UNCHANGED)
-            spread_spectrum_img_encoded = Image.open(spread_spectrum_encoded_image_file)
-            rpe_img_encoded = Image.open(rpe_encoded_image_file)
+            lsb_encoded_img = Image.open(lsb_encoded_image_file)
+            dct_encoded_img = cv2.imread(dct_encoded_image_file, cv2.IMREAD_UNCHANGED)
+            dwt_encoded_img = cv2.imread(dwt_encoded_image_file, cv2.IMREAD_UNCHANGED)
+            spread_spectrum_encoded_img = Image.open(spread_spectrum_encoded_image_file)
+            rpe_encoded_img = Image.open(rpe_encoded_image_file)
             os.chdir("..")
+            os.makedirs("Comparison_result/", exist_ok=True)
             os.chdir("Comparison_result/")
 
-            # Resize decoded images to match encoded images
-            dct_img = cv2.resize(dct_img, (dct_img_encoded.shape[1], dct_img_encoded.shape[0]))
+            # Convert images to numpy arrays
+            original_img_array = np.array(original_img)
+            lsb_encoded_img_array = np.array(lsb_encoded_img)
+            dct_encoded_img_array = dct_encoded_img
+            dwt_encoded_img_array = dwt_encoded_img
+            spread_spectrum_encoded_img_array = np.array(spread_spectrum_encoded_img)
+            rpe_encoded_img_array = np.array(rpe_encoded_img)
 
-            # Comparison using different methods
-            mse_lsb = Compare().meanSquareError(np.array(lsb_img), np.array(lsb_img_encoded))
-            mse_dct = Compare().meanSquareError(dct_img, dct_img_encoded)
-            mse_dwt = Compare().meanSquareError(dwt_img, dwt_img_encoded)
-            mse_spread_spectrum = Compare().meanSquareError(np.array(spread_spectrum_img), np.array(spread_spectrum_img_encoded))
-            mse_rpe = Compare().meanSquareError(np.array(lsb_img), np.array(rpe_img_encoded))
+            # Calculate SSIM, correlation, PSNR, embedding capacity, and MSE
+            ssim_lsb = Compare.ssim(original_img_array, lsb_encoded_img_array)
+            ssim_dct = Compare.ssim(original_img_array, dct_encoded_img_array)
+            ssim_dwt = Compare.ssim(original_img_array, dwt_encoded_img_array)
+            ssim_spread_spectrum = Compare.ssim(original_img_array, spread_spectrum_encoded_img_array)
+            ssim_rpe = Compare.ssim(original_img_array, rpe_encoded_img_array)
 
-            psnr_lsb = Compare().psnr(np.array(lsb_img), np.array(lsb_img_encoded))
-            psnr_dct = Compare().psnr(dct_img, dct_img_encoded)
-            psnr_dwt = Compare().psnr(dwt_img, dwt_img_encoded)
-            psnr_spread_spectrum = Compare().psnr(np.array(spread_spectrum_img), np.array(spread_spectrum_img_encoded))
-            psnr_rpe = Compare().psnr(np.array(lsb_img), np.array(rpe_img_encoded))
+            correlation_lsb = Compare.correlation(original_img_array, lsb_encoded_img_array)
+            correlation_dct = Compare.correlation(original_img_array, dct_encoded_img_array)
+            correlation_dwt = Compare.correlation(original_img_array, dwt_encoded_img_array)
+            correlation_spread_spectrum = Compare.correlation(original_img_array, spread_spectrum_encoded_img_array)
+            correlation_rpe = Compare.correlation(original_img_array, rpe_encoded_img_array)
 
-            capacity_lsb = Compare().embedding_capacity(lsb_img.size[0] * lsb_img.size[1])
-            capacity_dct = Compare().embedding_capacity(dct_img.size)
-            capacity_dwt = Compare().embedding_capacity(dwt_img.size)
-            capacity_spread_spectrum = Compare().embedding_capacity(spread_spectrum_img.size[0] * spread_spectrum_img.size[1])
-            capacity_rpe = Compare().embedding_capacity(lsb_img.size[0] * lsb_img.size[1])
+            psnr_lsb = Compare.psnr(original_img_array, lsb_encoded_img_array)
+            psnr_dct = Compare.psnr(original_img_array, dct_encoded_img_array)
+            psnr_dwt = Compare.psnr(original_img_array, dwt_encoded_img_array)
+            psnr_spread_spectrum = Compare.psnr(original_img_array, spread_spectrum_encoded_img_array)
+            psnr_rpe = Compare.psnr(original_img_array, rpe_encoded_img_array)
 
-            correlation_lsb = Compare().correlation(np.array(lsb_img), np.array(lsb_img_encoded))
-            correlation_dct = Compare().correlation(dct_img, dct_img_encoded)
-            correlation_dwt = Compare().correlation(dwt_img, dwt_img_encoded)
-            correlation_spread_spectrum = Compare().correlation(np.array(spread_spectrum_img), np.array(spread_spectrum_img_encoded))
-            correlation_rpe = Compare().correlation(np.array(lsb_img), np.array(rpe_img_encoded))
+            capacity_lsb = Compare.embedding_capacity(lsb_encoded_img_array.size)
+            capacity_dct = Compare.embedding_capacity(dct_encoded_img_array.size)
+            capacity_dwt = Compare.embedding_capacity(dwt_encoded_img_array.size)
+            capacity_spread_spectrum = Compare.embedding_capacity(spread_spectrum_encoded_img_array.size)
+            capacity_rpe = Compare.embedding_capacity(rpe_encoded_img_array.size)
 
-            correlation_lsb_mean = np.mean(correlation_lsb) 
-            correlation_dct_mean = np.mean(correlation_dct)
-            correlation_dwt_mean = np.mean(correlation_dwt)
-            correlation_spread_spectrum_mean = np.mean(correlation_spread_spectrum)
-            correlation_rpe_mean = np.mean(correlation_rpe)
+            # Calculate MSE
+            mse_lsb = np.mean((original_img_array - lsb_encoded_img_array) ** 2)
+            mse_dct = np.mean((original_img_array - dct_encoded_img_array) ** 2)
+            mse_dwt = np.mean((original_img_array - dwt_encoded_img_array) ** 2)
+            mse_spread_spectrum = np.mean((original_img_array - spread_spectrum_encoded_img_array) ** 2)
+            mse_rpe = np.mean((original_img_array - rpe_encoded_img_array) ** 2)
 
-            workbook = xlwt.Workbook()
-            sheet = workbook.add_sheet('Comparison')
+            # Create a workbook and add a worksheet
+            workbook = xlsxwriter.Workbook("comparison_result.xlsx")
+            worksheet = workbook.add_worksheet()
 
-            sheet.write(0, 0, 'Method')
-            sheet.write(0, 1, 'MSE')
-            sheet.write(0, 2, 'PSNR')
-            sheet.write(0, 3, 'Correlation')
-            sheet.write(0, 4, 'Embedding Capacity (bits)')
+            # Write column headers
+            headers = ["Method", "SSIM", "Correlation", "PSNR", "Embedding Capacity", "MSE"]
+            for col, header in enumerate(headers):
+                worksheet.write(0, col, header)
 
-            sheet.write(1, 0, 'LSB')
-            sheet.write(1, 1, mse_lsb)
-            sheet.write(1, 2, psnr_lsb)
-            sheet.write(1, 3, correlation_lsb_mean)
-            sheet.write(1, 4, capacity_lsb)
+            # Write data rows
+            data = [
+                ["LSB", ssim_lsb, correlation_lsb, psnr_lsb, capacity_lsb, mse_lsb],
+                ["DCT", ssim_dct, correlation_dct, psnr_dct, capacity_dct, mse_dct],
+                ["DWT", ssim_dwt, correlation_dwt, psnr_dwt, capacity_dwt, mse_dwt],
+                ["Spread Spectrum", ssim_spread_spectrum, correlation_spread_spectrum, psnr_spread_spectrum, capacity_spread_spectrum, mse_spread_spectrum],
+                ["RPE", ssim_rpe, correlation_rpe, psnr_rpe, capacity_rpe, mse_rpe]
+            ]
+            for row, row_data in enumerate(data, start=1):
+                for col, cell_data in enumerate(row_data):
+                    worksheet.write(row, col, cell_data)
 
-            sheet.write(2, 0, 'DCT')
-            sheet.write(2, 1, mse_dct)
-            sheet.write(2, 2, psnr_dct)
-            sheet.write(2, 3, correlation_dct_mean)
-            sheet.write(2, 4, capacity_dct)
+            # Close the workbook
+            workbook.close()
 
-            sheet.write(3, 0, 'DWT')
-            sheet.write(3, 1, mse_dwt)
-            sheet.write(3, 2, psnr_dwt)
-            sheet.write(3, 3, correlation_dwt_mean)
-            sheet.write(3, 4, capacity_dwt)
+            print("Comparison result saved in comparison_result.xlsx")
 
-            sheet.write(4, 0, 'Spread Spectrum')
-            sheet.write(4, 1, mse_spread_spectrum)
-            sheet.write(4, 2, psnr_spread_spectrum)
-            sheet.write(4, 3, correlation_spread_spectrum_mean)
-            sheet.write(4, 4, capacity_spread_spectrum)
-
-            sheet.write(5, 0, 'RPE')
-            sheet.write(5, 1, mse_rpe)
-            sheet.write(5, 2, psnr_rpe)
-            sheet.write(5, 3, correlation_rpe_mean)
-            sheet.write(5, 4, capacity_rpe)
-
-            workbook.save('Comparison_result.xls')
-
-            print("Comparison result was saved in the Comparison_result folder.")
             os.chdir("..")
 
         else:
+            print("Exiting...")
             break
