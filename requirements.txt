@@ -5,3 +5,4 @@ matplotlib
 pillow
 pathlib
 scipy
+scikit-image

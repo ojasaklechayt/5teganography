@@ -535,7 +535,7 @@ if __name__ == "__main__":
             correlation_spread_spectrum = Compare().correlation(np.array(spread_spectrum_img), np.array(spread_spectrum_img_encoded))
             correlation_rpe = Compare().correlation(np.array(lsb_img), np.array(rpe_img_encoded))
 
-            correlation_lsb_mean = np.mean(correlation_lsb)  # Calculate the mean of the correlation array
+            correlation_lsb_mean = np.mean(correlation_lsb) 
             correlation_dct_mean = np.mean(correlation_dct)
             correlation_dwt_mean = np.mean(correlation_dwt)
             correlation_spread_spectrum_mean = np.mean(correlation_spread_spectrum)
