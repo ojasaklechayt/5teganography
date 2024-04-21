@@ -343,8 +343,8 @@ class SpreadSpectrumSteganography:
         binary_msg = ''
         for row in range(encrypted_image.shape[0]):
             for col in range(encrypted_image.shape[1]):
-                # Accessing the blue channel (assuming message encoded in blue)
-                pixel_val = encrypted_image[row, col, 2]  
+                # Accessing the red channel (assuming message encoded in red)
+                pixel_val = encrypted_image[row, col, 0]  
                 pseudo_random_val = self.pseudo_random_seq[row, col]  # Corresponding pseudo-random sequence value
                 binary_msg += '1' if np.any(pixel_val ^ pseudo_random_val) else '0'  # Check if any element evaluates to True
 
@@ -359,9 +359,11 @@ class SpreadSpectrumSteganography:
         
         return decoded_msg
 
+
     def generate_pseudo_random_sequence(self, img_shape):
         np.random.seed(123) 
         self.pseudo_random_seq = np.random.randint(0, 2, size=img_shape)
+
 
 class Compare:
     @staticmethod
