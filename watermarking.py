@@ -36,6 +36,7 @@ class RPEEncryptDecrypt:
 
     @staticmethod
     def encode_rpe(original_image, secret_message):
+        secret_message += 'H'  # Choose a character that is unlikely to appear in the message
         binary_message = RPEEncryptDecrypt.text_to_binary(secret_message)
 
         if len(binary_message) > original_image.size[0] * original_image.size[1] * 3:
@@ -59,14 +60,26 @@ class RPEEncryptDecrypt:
     @staticmethod
     def decode_rpe(encoded_image):
         pixels = list(encoded_image.getdata())
+        random.seed(42)  # Setting the same seed for consistency
 
         binary_message = ''
-        for pixel in pixels:
-            for value in pixel:
-                binary_message += str(value & 1)  # Extracting the least significant bit
+        message = ''
+        for i in range(len(pixels)):
+            pixel_index = random.randint(0, len(pixels) - 1)
+            pixel_value = list(pixels[pixel_index])
+            channel_index = random.randint(0, 2)  # Randomly select a channel (R, G, or B)
+            binary_message += str(pixel_value[channel_index] & 1)  # Extracting the least significant bit
 
-        message = RPEEncryptDecrypt.binary_to_text(binary_message)
+            # Every 8 bits, convert to a character and check for the termination character
+            if len(binary_message) >= 8:
+                char = RPEEncryptDecrypt.binary_to_text(binary_message[:8])
+                if char == 'H':  # Termination character
+                    break
+                message += char
+                binary_message = binary_message[8:]
+
         return message
+
 
 class DWT:
     def encode_image(self, img_data, secret_msg):
