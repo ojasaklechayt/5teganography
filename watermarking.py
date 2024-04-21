@@ -68,64 +68,56 @@ class RPEEncryptDecrypt:
         message = RPEEncryptDecrypt.binary_to_text(binary_message)
         return message
 
-class DWT():
-    def encode_image(self, img, secret_msg, length):
-        bImg = self.iwt2(img)
-        height, width = bImg.shape[:2]
+class DWT:
+    def encode_image(self, img_data, secret_msg):
+        # Convert the input image data to a NumPy array
+        img_arr = np.array(img_data)
+
+        # Convert the input image to RGB if it's not already
+        if len(img_arr.shape) == 2:
+            img_arr = cv2.cvtColor(img_arr, cv2.COLOR_GRAY2RGB)
+
+        height, width, _ = img_arr.shape
+        length = len(secret_msg)
         index = 0
+
+        # Encode the message into the image data
         for row in range(height):
             for col in range(width):
-                if index < len(secret_msg):
+                if index < length:
                     c = secret_msg[index]
                     asc = ord(c)
                 else:
-                    asc = bImg[row, col]
-                bImg[row, col] = asc
+                    asc = img_arr[row, col, 0]  # Assuming the message is encoded in the blue channel
+                img_arr[row, col, 0] = asc
                 index += 1
-        return bImg
 
-    def decode_image(self, img, length):
-        # Decoding the hidden message from the DWT encoded image
+        # Convert the NumPy array back to a PIL image
+        encoded_pil_img = Image.fromarray(img_arr)
+
+        return encoded_pil_img
+
+    def decode_image(self, img_data, length):
+        # Convert the input image data to a NumPy array
+        img_arr = np.array(img_data)
+
+        # Convert the input image to RGB if it's not already
+        if len(img_arr.shape) == 2:
+            img_arr = cv2.cvtColor(img_arr, cv2.COLOR_GRAY2RGB)
+
         msg = ""
-        # Get size of image in pixels
-        height, width = img.shape[:2]
+        height, width, _ = img_arr.shape
         index = 0
+
+        # Decode the hidden message from the image data
         for row in range(height):
             for col in range(width):
-                if index <= length:
-                    # Assuming the message is encoded in the blue channel
-                    pixel_value = img[row, col, 0]
+                if index < length:
+                    pixel_value = img_arr[row, col, 0]  # Assuming the message is encoded in the blue channel
                     msg += chr(pixel_value)
                     index += 1
+
         return msg
-
-
-    def _iwt(self, array):
-        output = np.zeros_like(array)
-        nx, ny = array.shape[:2]
-        x = nx // 2
-        for j in range(ny):
-            output[0:x, j] = (array[0:x*2:2, j] + array[1:x*2:2, j]) // 2
-            output[x:nx, j] = array[0:x*2:2, j] - array[1:x*2:2, j]
-        return output
-
-
-    def _iiwt(self, array):
-        output = np.zeros_like(array)
-        nx, ny = array.shape
-        x = nx // 2
-        for j in range(ny):
-            output[0::2, j] = array[0:x, j] + (array[x:nx, j] + 1) // 2
-            output[1::2, j] = output[0::2, j] - array[x:nx, j]
-        return output
-
-    def iwt2(self, array):
-        array = array.squeeze()  # Remove single-dimensional entries from the shape of an array
-        return self._iwt(self._iwt(array.astype(int)).T).T
-
-
-    def iiwt2(self, array):
-        return self._iiwt(self._iiwt(array.astype(int).T).T)
 
 
 class DCT():
@@ -484,7 +476,7 @@ if __name__ == "__main__":
             # Encoding using different methods
             lsb_img_encoded = LSB().encode_image(lsb_img, secret_msg)
             dct_img_encoded = DCT().encode_image(dct_img, secret_msg)
-            dwt_img_encoded = DWT().encode_image(dwt_img, secret_msg, len(secret_msg))
+            dwt_img_encoded = DWT().encode_image(np.array(dwt_img), secret_msg)
             # Integration of Spread Spectrum
             spread_spectrum_steganography = SpreadSpectrumSteganography()
             encrypted_image = spread_spectrum_steganography.encrypt(spread_spectrum_img, secret_msg)
@@ -496,7 +488,8 @@ if __name__ == "__main__":
             dct_encoded_image_file = "dct_" + original_image_file
             cv2.imwrite(dct_encoded_image_file, dct_img_encoded)
             dwt_encoded_image_file = "dwt_" + original_image_file
-            cv2.imwrite(dwt_encoded_image_file, dwt_img_encoded)
+            dwt_img_encoded_array = np.array(dwt_img_encoded)
+            cv2.imwrite(dwt_encoded_image_file, dwt_img_encoded_array)
             spread_spectrum_encoded_image_file = "spread_spectrum_" + original_image_file
             Image.fromarray(encrypted_image).save(spread_spectrum_encoded_image_file)
             rpe_encoded_image_file = "rpe_" + original_image_file
@@ -521,7 +514,7 @@ if __name__ == "__main__":
             # Decoding using different methods
             lsb_hidden_text = LSB().decode_image(lsb_img)
             dct_hidden_text = DCT().decode_image(dct_img)
-            dwt_hidden_text = DWT().decode_image(dwt_img, len(secret_msg))
+            dwt_hidden_text = DWT().decode_image(np.array(dwt_img), len(secret_msg))
             spread_spectrum_steganography = SpreadSpectrumSteganography()
             spread_spectrum_steganography.generate_pseudo_random_sequence(np.array(encrypted_image).shape)
             encrypted_image_array = np.array(spread_spectrum_img)
