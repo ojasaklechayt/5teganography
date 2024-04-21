@@ -15,6 +15,7 @@ import base64
 from skimage.metrics import structural_similarity as compare_ssim
 import xlsxwriter
 import matplotlib.patches as mpatches
+import codecs
 
 quant = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
                   [12, 12, 14, 19, 26, 58, 60, 55],
@@ -304,64 +305,59 @@ class SpreadSpectrumSteganography:
     def encrypt(self, cover_image, secret_message):
         # Convert secret message to binary
         secret_message_binary = ''.join(format(ord(char), '08b') for char in secret_message)
-        
-        # Get the dimensions of the cover image
-        height, width = cover_image.size
-        
-        # Calculate the number of bits we can encode
-        max_bits_to_encode = height * width * 3 * self.strength
-        
-        if len(secret_message_binary) > max_bits_to_encode:
-            raise ValueError("Message too large to be encoded in the given image with the specified strength")
-        
+
         # Convert the cover image to numpy array
         cover_image_array = np.array(cover_image)
-        
+
+        # Get the dimensions of the cover image
+        height, width, channels = cover_image_array.shape
+
+        # Calculate the number of bits we can encode
+        max_bits_to_encode = height * width * channels * self.strength
+
+        if len(secret_message_binary) > max_bits_to_encode:
+            raise ValueError("Message too large to be encoded in the given image with the specified strength")
+
         # Generate pseudo-random sequence based on image shape
-        self.generate_pseudo_random_sequence(cover_image_array.shape[:2])
+        self.pseudo_random_seq = np.random.randint(0, 2, size=cover_image_array.shape)
 
         # Spread spectrum encryption
         encrypted_image = cover_image_array.copy()
         idx = 0
         for row in range(encrypted_image.shape[0]):
             for col in range(encrypted_image.shape[1]):
-                if idx < len(secret_message_binary):
-                    # Apply spread spectrum encoding
-                    pixel_val = list(encrypted_image[row, col])
-                    pixel_val[0] ^= int(secret_message_binary[idx]) ^ self.pseudo_random_seq[row, col]
-                    encrypted_image[row, col] = tuple(pixel_val)
-                    idx += 1
-                else:
-                    break
-            else:
-                continue
-            break
-        
+                for channel in range(encrypted_image.shape[2]):
+                    if idx < len(secret_message_binary):
+                        # Apply spread spectrum encoding
+                        encrypted_image[row, col, channel] = (encrypted_image[row, col, channel] + self.strength * (-1) ** int(secret_message_binary[idx]) * self.pseudo_random_seq[row, col, channel]) % 256
+                        idx += 1
+                    else:
+                        break
+
         return encrypted_image
 
     def decrypt(self, encrypted_image):
-        binary_msg = ''
-        for row in range(encrypted_image.shape[0]):
-            for col in range(encrypted_image.shape[1]):
-                # Accessing the red channel (assuming message encoded in red)
-                pixel_val = encrypted_image[row, col, 0]  
-                pseudo_random_val = self.pseudo_random_seq[row, col]  # Corresponding pseudo-random sequence value
-                binary_msg += '1' if np.any(pixel_val ^ pseudo_random_val) else '0'  # Check if any element evaluates to True
+        encrypted_image_array = np.array(encrypted_image)
 
-        # Padding and decoding binary message
-        remainder = len(binary_msg) % 8
-        if remainder != 0:
-            binary_msg = binary_msg[:-(remainder)]  # Remove excess bits
+        # Flatten the image array
+        flattened_image = encrypted_image_array.reshape(-1, encrypted_image_array.shape[-1])
 
-        decoded_msg = ''
-        for i in range(0, len(binary_msg), 8):
-            decoded_msg += chr(int(binary_msg[i:i + 8], 2))
+        # Flatten the pseudo-random sequence
+        flattened_seq = self.pseudo_random_seq.reshape(flattened_image.shape)
+
+        # Retrieve the encoded bits and convert them to binary string
+        encoded_bits = ((flattened_image - flattened_image % self.strength) // self.strength).astype(int) ^ flattened_seq
+        binary_msg = ''.join(str(bit) for bit in encoded_bits.flatten())
+
+        binary_msg = ''.join(char for char in binary_msg if char in '01')
         
+        # Convert binary string to text
+        decoded_msg = ''.join(chr(int(binary_msg[i:i+8], 2)) for i in range(0, len(binary_msg), 8))
+
         return decoded_msg
-
-
+    
     def generate_pseudo_random_sequence(self, img_shape):
-        np.random.seed(123) 
+        np.random.seed(123)
         self.pseudo_random_seq = np.random.randint(0, 2, size=img_shape)
 
 
